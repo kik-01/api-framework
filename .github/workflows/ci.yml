@@ -1,0 +1,62 @@
+# GitHub Actions 工作流 —— 每次 push 自动跑测试
+#
+# 每次 push 到 main 自动执行；也可在 Actions 页手动触发。
+# 无需配置 Secret：被测接口为公开 mock API。
+#
+# 设计说明：
+#   1. 为什么分成两个 step？
+#      → 「落库校验」那 6 条用例只依赖本地 SQLite + 本地 HTTP 服务，一定稳定；
+#        「接口用例」依赖公网 jsonplaceholder，第三方抖动就会红。
+#        CI 的原则是「红了就代表代码坏了」，不能让第三方挂了也变红，
+#        所以外网用例单独一步，并且 continue-on-error。
+#   2. 为什么外网用例还要跑？
+#      → 不跑就不知道契约有没有变。只是它的失败要人工判断，不能自动卡住流水线。
+#   3. 为什么 Python 用 3.12 而不是本地 3.14？
+#      → CI 求稳，用 GitHub 上最成熟的版本；本地新版本用来提前发现问题。
+
+name: API tests
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:      # 允许在网页上手动点 Run workflow
+
+jobs:
+  test:
+    runs-on: ubuntu-latest          # GitHub 的云电脑，真 Linux
+
+    steps:
+      - name: 拉取代码
+        uses: actions/checkout@v4
+
+      - name: 装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # ① 稳定用例：本地 SQLite + 本地服务，不依赖任何外网
+      - name: 跑落库校验用例（必过）
+        run: python -m pytest testcases/test_db_consistency.py -v
+
+      # ② 外网用例：依赖公网 API，失败时人工判断，不卡流水线
+      - name: 跑接口用例（依赖外网，允许抖动）
+        continue-on-error: true
+        run: python -m pytest testcases/test_posts.py -v
+
+      # ③ 生成 Allure 结果，方便以后接报告
+      - name: 生成 Allure 结果
+        if: always()
+        run: python -m pytest --alluredir=reports/allure -q || true
+
+      - name: 上传 Allure 结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: allure-results
+          path: reports/allure
+          if-no-files-found: ignore
