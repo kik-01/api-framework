@@ -1,0 +1,5 @@
+# CI 依赖（GitHub Actions 里 pip install 用）
+# 版本用范围而不是固定值：CI 的 Python 版本和本地不同，固定小版本容易装不上
+pytest>=8.0
+requests>=2.31
+PyYAML>=6.0

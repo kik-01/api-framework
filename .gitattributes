@@ -1,0 +1,8 @@
+# 统一换行符，避免 Windows 上 .cmd 被改成 LF 后双击失效
+*.cmd text eol=crlf
+*.bat text eol=crlf
+*.py  text eol=lf
+*.md  text eol=lf
+*.yaml text eol=lf
+*.yml text eol=lf
+*.ini text eol=lf

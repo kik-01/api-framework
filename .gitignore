@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# 虚拟环境
+.venv/
+venv/
+env/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# 运行产物（不该进仓库）
+logs/
+reports/
+*.log
+
+# 本地数据库（每次跑测试会重建）
+data/test.db
+data/*.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# 环境变量与密钥
+.env
+*.token
