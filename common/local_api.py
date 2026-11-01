@@ -1,20 +1,14 @@
-"""本地被测服务 —— 一个真正会写数据库的极简用户 API。
+"""本地被测服务：一个会真实写入 SQLite 的极简用户 API。
 
-为什么需要自己起一个服务（而不是继续用 jsonplaceholder）：
+mock 服务不落库，POST 返回的 id 无法查询，因此无法验证
+「接口返回成功」到「数据真正入库」这条链路。本服务实现同一组接口，但会真实写库。
 
-    jsonplaceholder 是 mock 服务，POST 只返回一个假 id，**不会真的落库**。
-    所以「创建后查询」必然 404，没法验证「接口返回成功 → 数据真的进库了」这条链路。
-    为了把这个短板补上，这里用标准库起一个真实会写 SQLite 的服务。
+接口：
+    POST /users          创建用户，写入 SQLite，返回 201 与 {id, name, city}
+    GET  /users/{id}     查询用户，200 或 404
+    POST /users/broken   返回 200 但不写库，用于验证查库校验能识别假成功
 
-被测接口：
-    POST /users          创建用户，写库，返回 201 + {id, name, city}
-    GET  /users/{id}     查用户，读库，200 或 404
-    POST /users/broken   故意「假成功」：返回 200 但不写库
-                         —— 专门用来证明「查库校验」能发现 200 的假象
-
-为什么用标准库 http.server 而不是 Flask/FastAPI：
-    不想为测试框架的辅助服务多装一层依赖，也不想让 CI 多一步。
-    80 行标准库够用，不必为此引入 Web 框架依赖。
+使用 http.server 而非 Flask/FastAPI：辅助服务不引入额外依赖，CI 也无需多一步安装。
 """
 
 from __future__ import annotations

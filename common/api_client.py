@@ -1,11 +1,8 @@
-"""统一的请求封装。
+"""统一的 HTTP 请求封装。
 
-设计说明：
-- 为什么不直接在用例里写 requests.get()？
-  → 因为真实项目要统一加 token、统一超时、统一日志、统一异常处理。
-    散落在 100 个用例里的 requests.get() 是不可维护的。
-- 为什么返回 Response 而不是直接返回 json？
-  → 用例有时要断言状态码、有时要断言响应头，直接返回 json 会丢信息。
+所有请求经由此类发出，集中处理鉴权、超时、日志与异常，
+避免同类逻辑散落在各用例中难以维护。
+返回 Response 对象而非解析后的 JSON，保留状态码与响应头供上层断言。
 """
 
 from __future__ import annotations
@@ -68,20 +65,10 @@ class ApiClient:
         retries: int | None = None,
         **kwargs,
     ) -> requests.Response:
-        """发请求，带自动重试。
+        """发送请求，带自动重试。
 
-        ⚠️ 为什么需要重试（踩坑记录 #1 的延伸）：
-        第一次跑用例时 /posts 列表接口 Read timed out。
-        一开始我以为是框架写错了，其实是**公开 API 本身不稳**：
-        同样的请求，有时 300ms 返回，有时 30 秒都不回。
-
-        教训：**断言"被测服务稳定"是测试的假设，不是事实。**
-             对不稳定的外部依赖，要么加重试，要么明确标记为不稳定用例。
-             真实项目里，内网接口一般不需要重试；
-             但走公网 / 第三方依赖的用例，几乎都必须重试。
-
-        注意：**只对"连接类错误"和 5xx 重试，不能对 4xx 重试** ——
-             4xx 是客户端错误，重试多少次都一样，只会拖慢测试。
+只对连接类错误与 5xx 重试：4xx 属客户端错误，重试不会改变结果，只会拖慢执行。
+重试次数与退避间隔在 config.yaml 中配置，内网接口可设为 0。
         """
         url = path if path.startswith("http") else f"{self.base_url}{path}"
         max_attempts = (retries if retries is not None else CONFIG.get("retries", 2)) + 1

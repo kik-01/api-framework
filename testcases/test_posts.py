@@ -40,14 +40,11 @@ class TestPostsQuery:
     """查询类接口。"""
 
     def test_get_post_list(self, client: ApiClient):
-        """获取列表：状态码 + 是数组 + 非空。
+        """获取列表：校验状态码、返回类型与非空。
 
-        ⚠️ 踩坑记录 #1：这里必须带 _limit。
-        不带的话 jsonplaceholder 一次返回 100 条完整文章，公网慢的时候直接读超时 ——
-        我第一次跑就是这个报错：
-            ReadTimeoutError: HTTPSConnectionPool(...): Read timed out.
-        教训：**回归测试不要请求无上限的列表接口**，
-             真实项目里前端分页、测试也要分页。
+        必须带 _limit：不带时该接口一次返回 100 条完整记录，
+        公网延迟下容易触发 ReadTimeout。回归测试不应对无上限的列表接口发请求，
+        真实项目的列表接口由前端分页，测试同样需要分页参数。
         """
         resp = client.get("/posts", params={"_limit": 10})
         assert_status(resp, 200, "获取文章列表")
@@ -227,17 +224,15 @@ class TestPostsPerformance:
 # ============================================================
 
 class TestPostsDependencyChain:
-    """演示如何处理接口依赖。
+    """验证接口依赖链：创建 → 使用 → 清理。
 
-    ⚠️ 踩坑记录 #2：mock 服务不持久化数据。
-    jsonplaceholder 的 POST /posts 会返回一个假 id（101），
-    但这个资源**并没有真的被创建**，紧接着 GET /posts/101 返回 404。
-    我第一次写完"创建后立刻查询"的断言，直接挂了。
+    jsonplaceholder 不持久化数据：POST /posts 返回 id=101，
+    但该资源并未真正创建，随后 GET /posts/101 返回 404。
+    「创建后立即查询」的断言在本环境必然失败，因此标记为 xfail。
 
-    结论：**验证链路之前，先确认被测环境是否真的持久化数据**，
-    否则容易误以为在测业务逻辑，实际是在测 mock 服务的行为。
-
-    指向真实接口时，把下面那条用例的 xfail 去掉即可。
+    验证链路前需确认被测环境是否真的持久化数据，
+    否则实际验证的是 mock 服务的行为，而非业务逻辑。
+    指向真实接口时移除该用例的 xfail 标记即可。
     """
 
     def test_created_post_returns_id(self, client: ApiClient, created_post: dict):

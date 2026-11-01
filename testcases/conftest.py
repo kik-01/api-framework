@@ -1,12 +1,8 @@
 """pytest 全局 fixture。
 
-设计说明：
-- 为什么用 fixture 而不是模块级全局变量？
-  → fixture 有明确的作用域（function/class/module/session），
-    能保证每个用例拿到干净的数据；全局变量会被上一个用例污染，
-    产生"单独跑能过、一起跑就挂"的经典问题。
-- 为什么 yield 而不是 return？
-  → yield 可以做前置+后置（setup/teardown），比如下面 client 用完关闭 session。
+使用 fixture 而非模块级全局变量：fixture 有明确作用域（function / class / module / session），
+保证每条用例拿到干净的数据，避免「单独跑通过、一起跑失败」的用例间污染。
+使用 yield 而非 return，以便在用例结束后执行清理（如关闭 session）。
 """
 
 from __future__ import annotations
@@ -67,17 +63,10 @@ def created_post(client: ApiClient) -> dict:
 
 @pytest.fixture(scope="session")
 def local_api() -> dict:
-    """启动一个真正会写 SQLite 的本地服务，供「接口 + 落库」校验使用。
+    """启动会写 SQLite 的本地服务，供「接口 + 落库」校验使用。
 
-    为什么不用 jsonplaceholder：
-        它是 mock 服务，POST 只返回假 id，不落库 —— 没法验证「接口说成功，数据到底进没进库」。
-        这个 fixture 用标准库起一个 127.0.0.1 的极简用户 API，真实写库。
-
-    为什么 scope="session"：
-        整个会话只起一次，避免每条用例反复建表、反复绑定端口，跑得快。
-
-    为什么端口用 0：
-        让系统分配空闲端口，避免与本机已占用端口冲突。
+scope="session"：整个会话只启动一次，避免每条用例重复建表与绑定端口。
+端口设为 0：由系统分配空闲端口，避免与本机已占用端口冲突。
     """
     from common.db import Db
     from common.local_api import start

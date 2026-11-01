@@ -1,9 +1,7 @@
 """日志封装。
 
-设计取舍：为什么不用 print？
-- print 没法分级（debug/info/error），出问题时分不清主次
-- print 没法关（CI 上跑几万条用例会刷屏）
-- print 没法同时输出到文件，出问题时没有历史可查
+不使用 print：无法分级、无法关闭、无法落盘。
+本模块支持 debug / info 两级，同时输出到控制台与文件，便于回溯。
 """
 
 from __future__ import annotations

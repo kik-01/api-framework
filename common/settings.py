@@ -1,8 +1,7 @@
 """全局配置与路径管理。
 
-设计说明：
-- 为什么用 YAML 存配置而不是硬编码？→ 换测试环境不用改代码。
-- 为什么用 pathlib 而不是拼字符串？→ Windows 用 \、Linux 用 /，pathlib 自动适配。
+配置从 YAML 读取，切换测试环境无需改动代码。
+路径使用 pathlib，兼容 Windows 与 Linux 的分隔符差异。
 """
 
 from __future__ import annotations

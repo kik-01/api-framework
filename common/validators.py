@@ -1,13 +1,10 @@
 """断言工具。
 
-设计说明：
-- 为什么不直接用 assert？
-  → 可以用。但真实项目里断言失败要**带上下文**，否则报告里只有
-    "assert 200 == 404"，看不出请求发了什么、返回了什么。
-    这里的 assert_status 会把响应体一起带进失败信息。
-- 为什么单独写 response_schema 而不是引 jsonschema 库？
-  → 为了少一个依赖。真实项目建议直接上 jsonschema，更严谨。
-    这里手写校验是为了把结构校验逻辑显式化，避免依赖黑盒断言。
+断言失败时需携带上下文，否则报告里只有 "assert 200 == 404"，
+无法判断请求发了什么、返回了什么。assert_status 会将响应体带入失败信息。
+
+结构校验为手写实现，未引入 jsonschema：本项目字段较少，手写更直观。
+字段类型在配置中以字符串描述（如 "int"），由 _TYPE_MAP 映射为真实类型。
 """
 
 from __future__ import annotations
@@ -59,19 +56,16 @@ def assert_fields(resp: requests.Response, expected: dict, msg: str = "") -> Non
 
 
 def assert_schema(resp: requests.Response, schema: dict, msg: str = "") -> None:
-    """极简结构校验：只检查字段是否存在和类型是否匹配。
+    """极简结构校验：检查字段是否存在、类型是否匹配。
 
     schema 形如：{"id": "int", "title": "str", "body": "str"}
 
-    ⚠️ 踩坑记录 #3：类型名必须写成**字符串**。
-    一开始我在 validators 里直接写 `isinstance(value, expected_type)`，
-    想让 YAML 里的 `int` 当类型用 —— 结果报：
-        TypeError: isinstance() arg 2 must be a type, a tuple of types, or a union
-    因为 **YAML/JSON 里没有"类型"这个数据类型**，`int` 被解析成了字符串 "int"。
-    所以这里要建一张 名字->类型 的映射表。
-    这个坑在真实项目里也常见（配置文件驱动的校验都躲不过）。
+    类型名以字符串描述，由 _TYPE_MAP 映射为真实类型。
+    YAML / JSON 中没有「类型」这一数据类型，int 会被解析为字符串 "int"，
+    直接传给 isinstance 会抛 TypeError，因此需要映射层。
+    凡配置文件驱动的类型校验都会遇到同样的问题。
 
-    真实项目建议直接上 jsonschema 库，支持嵌套 / 必填 / 枚举 / 正则等。
+    如需支持嵌套、必填、枚举、正则，建议改用 jsonschema。
     """
     TYPE_MAP = {
         "str": str,
