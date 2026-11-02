@@ -7,22 +7,20 @@ env_name: test
 base_url: "https://jsonplaceholder.typicode.com"
 
 # 请求默认超时（秒）
-# 教训：一开始设 10 秒，调 /posts 列表接口（一次返回 100 条完整数据）直接超时。
-# 真实项目里公开 API / 返回体大的接口必须放宽超时，或者分页取。
-# 这也是我记进 README「踩坑记录」的第一条。
+# 公开 API 或返回体较大的接口需放宽超时，或改用分页请求。
 timeout: 30
 
 # 失败自动重试次数（0 = 不重试）
-# 走公网 / 依赖第三方服务的用例几乎必须开；内网接口一般设 0。
-# 注意：只对超时、连接错误和 5xx 重试，4xx 不重试（重试没意义，只会拖慢）
+# 公网/第三方依赖建议开启；内网接口可设 0。
+# 仅对超时、连接错误与 5xx 重试；4xx 不重试。
 retries: 2
 
 # 是否打印请求/响应日志
 verbose: true
 
 # 数据库配置（用于「接口返回成功 → 数据真的落库」一致性校验）
-# 本项目用 SQLite（免安装、免密码，CI 环境可直接跑）。
-# 真实项目换 MySQL 只需改 driver + 连接信息，common/db.py 上层方法不用动。
+# 本项目用 SQLite（免安装、免密码，CI 可直接运行）。
+# 换 MySQL 只需改 driver 与连接信息，common/db.py 上层方法不变。
 database:
   enabled: true
   driver: "sqlite"
