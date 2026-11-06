@@ -39,6 +39,7 @@ from common.validators import (
 class TestPostsQuery:
     """查询类接口。"""
 
+    @pytest.mark.smoke
     def test_get_post_list(self, client: ApiClient):
         """获取列表：校验状态码、返回类型与非空。
 
@@ -53,6 +54,7 @@ class TestPostsQuery:
         assert len(body) > 0, "列表不应为空"
         assert len(body) <= 10, f"_limit=10 应生效，实际返回 {len(body)} 条"
 
+    @pytest.mark.smoke
     def test_get_single_post(self, client: ApiClient):
         """获取单条：字段齐全且值正确。"""
         resp = client.get("/posts/1")
@@ -73,11 +75,14 @@ class TestPostsQuery:
         assert len(body) > 0, "userId=1 应有数据"
         wrong = [item for item in body if item.get("userId") != 1]
         assert not wrong, f"过滤失效，返回了 userId!=1 的数据: {wrong[:2]}"
+        # 发了 _limit 就必须校验它生效，否则分页参数形同没测
+        assert len(body) <= 20, f"_limit=20 应生效，实际返回 {len(body)} 条"
 
 
 class TestPostsWrite:
     """写入类接口（增删改）。"""
 
+    @pytest.mark.smoke
     def test_create_post(self, client: ApiClient):
         """创建：应返回 201 且回显数据。"""
         payload = {"title": "新文章", "body": "内容", "userId": 1}
@@ -168,14 +173,20 @@ class TestPostsNegative:
         )
 
     def test_wrong_method(self, client: ApiClient):
-        """错误的方法：对只支持读写的资源用 DELETE 列表。"""
+        """错误的方法：对集合资源用 DELETE。
+
+        断言收紧为 404/405：只断言「不是 500」时，200/204/301 都会通过，
+        等于没验证「服务端拒绝了这个方法」。实测该地址返回 404。
+        """
         resp = client.delete("/posts")
-        assert resp.status_code != 500, "方法不支持不应导致 500"
+        assert resp.status_code in (404, 405), (
+            f"对集合资源发 DELETE 应被拒绝（404/405），实际 {resp.status_code}"
+        )
 
     @pytest.mark.xfail(
         reason="jsonplaceholder 不校验参数，缺失或类型错误仍返回 201；"
                "接真实接口后应返回 400/422。",
-        strict=False,
+        strict=True,
     )
     def test_create_with_invalid_payload(self, client: ApiClient, bad_case: dict):
         """异常参数：缺少必填字段或类型错误，应返回 400/422。"""
@@ -226,7 +237,7 @@ class TestPostsDependencyChain:
     @pytest.mark.xfail(
         reason="jsonplaceholder 不持久化：创建返回 id=101，但 GET /posts/101 是 404。"
                "真实接口上此用例应通过。",
-        strict=False,
+        strict=True,
     )
     def test_created_post_is_queryable(self, client: ApiClient, created_post: dict):
         """创建后立即可查 —— 这条链路专门用来暴露缓存 / 主从延迟类 bug。"""

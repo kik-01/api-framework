@@ -71,8 +71,18 @@ def created_post(client: ApiClient) -> dict:
 
     # 后置清理。jsonplaceholder 是 mock 服务不会真删，
     # 真实项目这里必须真的调删除接口，否则环境会被污染。
-    del_resp = client.delete(f"/posts/{resource.get('id')}")
-    log.debug("fixture 清理资源 id=%s -> %s", resource.get("id"), del_resp.status_code)
+    #
+    # 清理失败不能影响用例结论：teardown 抛异常时，pytest 会把**本已通过**的用例
+    # 记成 ERROR，报告里就分不清「业务断言失败」和「清理失败」。
+    # 因此这里只记警告，删除契约是否成立由专门的用例去断言。
+    try:
+        del_resp = client.delete(f"/posts/{resource.get('id')}")
+        log.debug("fixture 清理资源 id=%s -> %s", resource.get("id"), del_resp.status_code)
+    except Exception as exc:                       # noqa: BLE001
+        log.warning(
+            "fixture 清理资源 id=%s 失败（不影响用例结论）: %s",
+            resource.get("id"), exc,
+        )
 
 
 # ============================================================
@@ -85,13 +95,24 @@ def local_api() -> dict:
 
 scope="session"：整个会话只启动一次，避免每条用例重复建表与绑定端口。
 端口设为 0：由系统分配空闲端口，避免与本机已占用端口冲突。
+config.yaml 的 database.enabled=false 时跳过整组落库用例。
     """
     from common.db import Db
     from common.local_api import start
 
+    db_cfg = CONFIG.get("database") or {}
+    if not db_cfg.get("enabled", True):
+        pytest.skip("config.yaml 中 database.enabled=false，跳过落库一致性用例")
+
     db_path = DATA_DIR / "test.db"
-    if db_path.exists():
-        db_path.unlink()
+    # Windows 下连接未释放会锁文件；连 WAL 的附属文件一起清
+    for suffix in ("", "-wal", "-shm"):
+        leftover = db_path.with_name(db_path.name + suffix)
+        if leftover.exists():
+            try:
+                leftover.unlink()
+            except OSError as exc:                   # noqa: PERF203
+                log.warning("旧库文件清理失败 %s: %s", leftover, exc)
 
     server, base_url = start(db_path)
     api = ApiClient(base_url=base_url, timeout=5)
@@ -101,5 +122,6 @@ scope="session"：整个会话只启动一次，避免每条用例重复建表�
     yield {"client": api, "db": db, "base_url": base_url}
 
     api.session.close()
-    server.shutdown()
+    server.shutdown()          # 停止 serve_forever 循环
+    server.server_close()      # 释放监听端口，避免重复运行时地址被占用
     log.info("本地被测服务已关闭")

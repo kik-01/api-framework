@@ -11,6 +11,8 @@ HTTP 200/201 只代表服务端处理完请求，不代表数据已写入数据�
 
 from __future__ import annotations
 
+from uuid import uuid4
+
 import pytest
 
 from common.validators import assert_status
@@ -19,6 +21,7 @@ from common.validators import assert_status
 class TestDbConsistency:
     """接口返回成功之后，数据必须真的在库里。"""
 
+    @pytest.mark.smoke
     def test_create_user_is_persisted(self, local_api):
         """创建用户：201 + 库里真的查得到 + 字段与请求一致。
 
@@ -39,23 +42,36 @@ class TestDbConsistency:
         assert row["city"] == "广州", "库里 city 与请求不一致"
 
     def test_count_increases_by_one(self, local_api):
-        """每创建一条，库里的行数必须 +1。
+        """每创建一条，库里的记录必须 +1，且同一份数据只能有 1 条。
 
         比「查得到」更进一层：验证的是**没有多写、也没有少写**。
         接口偶尔会因为重试机制导致重复写入，只有数行数才能发现。
+
+        这里用唯一名字做数据隔离：按名字计数，即使别的用例也在写库，
+        本用例的结论依然成立；全表计数只作为辅助断言保留。
         """
         client, db = local_api["client"], local_api["db"]
 
-        before = db.count("users")
-        resp = client.post("/users", json_body={"name": "李四", "city": "深圳"})
-        assert_status(resp, 201, "创建用户")
-        after = db.count("users")
+        unique_name = f"李四-{uuid4().hex[:8]}"
+        before_total = db.count("users")
+        assert db.count("users", "name = ?", (unique_name,)) == 0, "测试数据名应唯一"
 
-        assert after == before + 1, (
-            f"创建一条记录后行数应 +1，实际 {before} -> {after}。"
-            f"少了说明没落库，多了说明重复写入（检查重试是否把写操作也重试了）"
+        resp = client.post("/users", json_body={"name": unique_name, "city": "深圳"})
+        assert_status(resp, 201, "创建用户")
+
+        named_rows = db.count("users", "name = ?", (unique_name,))
+        assert named_rows == 1, (
+            f"同一份数据应只落库 1 条，实际 {named_rows} 条。"
+            f"多了说明写操作被重试导致重复写入（检查重试是否只作用于幂等方法）"
         )
 
+        after_total = db.count("users")
+        assert after_total == before_total + 1, (
+            f"创建一条记录后全表行数应 +1，实际 {before_total} -> {after_total}。"
+            f"少了说明没落库"
+        )
+
+    @pytest.mark.smoke
     def test_fake_success_can_be_detected(self, local_api):
         """证明查库校验的价值：接口说 200，但库里没有 —— 我们能发现。
 

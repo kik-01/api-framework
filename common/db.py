@@ -7,17 +7,28 @@ HTTP 200/201 只代表服务端处理完请求，不代表数据已写入数据�
 使用 sqlite3 而非 pymysql：被测服务为本地 mock，SQLite 免安装、免密码，CI 可直接运行。
 上层接口（query_one / count）与连接方式解耦，切换 pymysql 只需替换 connect 部分。
 返回 dict 而非 Row：按字段名取值，新增字段不会导致错位。
+
+两个容易踩的坑（已处理）：
+  1. `with sqlite3.Connection` 只负责提交 / 回滚，**不会关闭连接**，
+     长时间跑会积累文件句柄；Windows 上残留连接还会让下次删库报 PermissionError。
+     因此统一用 contextlib.closing 显式关闭。
+  2. count / truncate 需要拼表名，SQL 无法对表名做参数化。
+     这里用白名单校验，避免将来表名来自 YAML 时出现注入入口。
 """
 
 from __future__ import annotations
 
 import sqlite3
+from contextlib import closing
 from pathlib import Path
 
 from common.logger import get_logger
 from common.settings import CONFIG, ROOT
 
 log = get_logger(__name__)
+
+# 允许被 count / truncate 拼接的表名。新增表时同步加到这里。
+ALLOWED_TABLES = frozenset({"users"})
 
 
 def _db_path() -> Path:
@@ -26,6 +37,16 @@ def _db_path() -> Path:
     raw = db_cfg.get("path", "data/test.db")
     path = Path(raw)
     return path if path.is_absolute() else (ROOT / path)
+
+
+def _checked_table(table: str) -> str:
+    """表名白名单校验：表名无法参数化，只能靠校验挡住拼接风险。"""
+    if table not in ALLOWED_TABLES:
+        raise ValueError(
+            f"不允许操作表 {table!r}，可用表: {sorted(ALLOWED_TABLES)}。"
+            f"确需新增请在 common/db.py 的 ALLOWED_TABLES 中登记。"
+        )
+    return table
 
 
 class Db:
@@ -46,34 +67,41 @@ class Db:
 
     def query_one(self, sql: str, params: tuple = ()) -> dict | None:
         """查一条，返回 dict；查不到返回 None。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             row = conn.execute(sql, params).fetchone()
             return dict(row) if row is not None else None
 
     def query_all(self, sql: str, params: tuple = ()) -> list[dict]:
         """查多条，返回 dict 列表。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             return [dict(r) for r in conn.execute(sql, params).fetchall()]
 
     def count(self, table: str, where: str = "1=1", params: tuple = ()) -> int:
-        """count 一行，用来断言「到底有没有写进去」。"""
+        """count 一行，用来断言「到底有没有写进去」。
+
+        where 只接受参数化占位（如 "name = ?"），表名走白名单。
+        """
+        table = _checked_table(table)
         row = self.query_one(f"SELECT COUNT(*) AS c FROM {table} WHERE {where}", params)
         return int(row["c"]) if row else 0
 
     def execute(self, sql: str, params: tuple = ()) -> None:
         """执行写操作（测试里一般只用来清数据）。"""
-        with self._connect() as conn:
+        with closing(self._connect()) as conn:
             conn.execute(sql, params)
+            conn.commit()
 
     def truncate(self, table: str) -> None:
         """清空一张表，用于用例之间的数据隔离。"""
-        with self._connect() as conn:
+        table = _checked_table(table)
+        with closing(self._connect()) as conn:
             conn.execute(f"DELETE FROM {table}")
+            conn.commit()
 
     def ping(self) -> bool:
         """连通性检查，配置里 enabled=false 时可以跳过校验。"""
         try:
-            with self._connect() as conn:
+            with closing(self._connect()) as conn:
                 conn.execute("SELECT 1")
             return True
         except Exception as exc:               # noqa: BLE001

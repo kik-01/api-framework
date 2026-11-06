@@ -118,9 +118,21 @@ def assert_schema(resp: requests.Response, schema: dict, msg: str = "") -> None:
 def assert_response_time(resp: requests.Response, max_ms: float, msg: str = "") -> None:
     """断言响应时间在阈值内（性能基线）。
 
+    优先使用 ApiClient 挂上的 total_elapsed（含重试与退避的总耗时）；
+    没有该属性时退回 requests 的 elapsed（单次请求耗时）。
+    只取最后一次请求的耗时，会把「重试了 3 次」的慢请求算成「一次很快」，
+    性能基线会系统性偏乐观。
+
     注意：这个值在不同网络/机器上波动大，真实项目里要放宽或用百分位统计。
     """
-    elapsed_ms = resp.elapsed.total_seconds() * 1000
+    total = getattr(resp, "total_elapsed", None)
+    if total is None:
+        total = resp.elapsed.total_seconds()
+
+    elapsed_ms = total * 1000
+    attempts = getattr(resp, "attempts", 1)
     assert elapsed_ms <= max_ms, (
-        f"{msg}\n  响应超时: {elapsed_ms:.0f}ms > {max_ms:.0f}ms"
+        f"{msg}\n"
+        f"  响应超时: {elapsed_ms:.0f}ms > {max_ms:.0f}ms"
+        f"（共尝试 {attempts} 次，含重试与退避）"
     )

@@ -1,18 +1,23 @@
-# GitHub Actions 工作流 —— 每次 push 自动跑测试
+# GitHub Actions 工作流 —— 每次 push 到 main 自动回归
 #
-# 每次 push 到 main 自动执行；也可在 Actions 页手动触发。
-# 无需配置 Secret：被测接口为公开 mock API。
+# 设计原则（比“全绿好看”更重要）：
+#   1. CI 的红绿必须可信。任何 "|| true"、"continue-on-error" 包裹测试执行，
+#      都会让流水线在代码真坏的时候依然显示绿色，等于没有 CI。
+#   2. 门禁要分层：
+#        · 本地落库用例（test_db_consistency）只依赖本地 SQLite + 本地 HTTP 服务，
+#          结果完全可控 → 硬门禁，失败即让 job 失败。
+#        · 公网接口用例（test_posts）依赖第三方 jsonplaceholder，
+#          首次失败先自动重跑“仅失败项”一次以吸收单次网络抖动；
+#          重跑仍失败才判红 —— 这是“值得报警的失败”，不是把失败藏起来。
+#   3. Allure 结果直接取自上面两次真实执行，不再为了出报告把全量用例再跑一遍，
+#      因此不需要也不允许 "|| true"。
+#   4. 若第三方长期不稳定，再考虑把公网用例拆成独立 job（job 级 continue-on-error），
+#      并且只把本地 job 设为 required check —— 用分支保护控制阻塞，
+#      而不是用 "|| true" 掩盖失败。
 #
-# 设计说明：
-#   1. 为什么分成两个 step？
-#      → 「落库校验」那 6 条用例只依赖本地 SQLite + 本地 HTTP 服务，一定稳定；
-#        「接口用例」依赖公网 jsonplaceholder，第三方抖动就会红。
-#        CI 的原则是「红了就代表代码坏了」，不能让第三方挂了也变红，
-#        所以外网用例单独一步，并且 continue-on-error。
-#   2. 为什么外网用例还要跑？
-#      → 不跑就不知道契约有没有变。只是它的失败要人工判断，不能自动卡住流水线。
-#   3. 为什么 Python 用 3.12 而不是本地 3.14？
-#      → CI 求稳，用 GitHub 上最成熟的版本；本地新版本用来提前发现问题。
+# 其他说明：
+#   · 无需配置 Secret：被测接口为公开 mock API。
+#   · Python 用 3.12 而非本地更新版本：CI 求稳。
 
 name: API tests
 
@@ -21,8 +26,12 @@ on:
     branches: [main]
   workflow_dispatch:      # 允许在网页上手动点 Run workflow
 
+permissions:
+  contents: read          # 只读代码，最小权限
+
 jobs:
   test:
+    name: API 回归（本地落库 + 公网接口）
     runs-on: ubuntu-latest          # GitHub 的云电脑，真 Linux
 
     steps:
@@ -39,19 +48,42 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      # ① 稳定用例：本地 SQLite + 本地服务，不依赖任何外网
-      - name: 跑落库校验用例（必过）
-        run: python -m pytest testcases/test_db_consistency.py -v
+      # ① 硬门禁：本地 SQLite + 本地服务，不依赖任何外网
+      - name: 跑落库校验用例（硬门禁，失败即红）
+        id: local_gate
+        run: python -m pytest testcases/test_db_consistency.py -v --alluredir=reports/allure
 
-      # ② 外网用例：依赖公网 API，失败时人工判断，不卡流水线
-      - name: 跑接口用例（依赖外网，允许抖动）
-        continue-on-error: true
-        run: python -m pytest testcases/test_posts.py -v
+      # ② 公网用例：第一次失败只重跑失败项一次，吸收单次网络抖动
+      - name: 跑公网接口用例（第 1 次执行）
+        id: external_first
+        continue-on-error: true          # 仅作为“重跑前的暂缓”，不是放行
+        run: python -m pytest testcases/test_posts.py -v --alluredir=reports/allure
 
-      # ③ 生成 Allure 结果，方便以后接报告
-      - name: 生成 Allure 结果
+      - name: 跑公网接口用例（仅重跑失败项）
+        id: external_retry
+        if: steps.external_first.outcome == 'failure'
+        run: |
+          echo "首次执行有失败项，10 秒后仅重跑失败用例一次"
+          sleep 10
+          python -m pytest testcases/test_posts.py -v --lf --alluredir=reports/allure
+
+      # ③ 结果汇总：把两层门禁的结论写进 job summary，肉眼可分辨失败归属
+      - name: 输出门禁结论
         if: always()
-        run: python -m pytest --alluredir=reports/allure -q || true
+        run: |
+          {
+            echo "## 门禁结论"
+            echo ""
+            echo "| 层 | 步骤结论 |"
+            echo "|---|---|"
+            echo "| 本地落库（硬门禁） | ${{ steps.local_gate.outcome }} |"
+            echo "| 公网接口（首次） | ${{ steps.external_first.outcome }} |"
+            echo "| 公网接口（仅重跑失败项） | ${{ steps.external_retry.outcome }} |"
+            echo ""
+            echo "> 本地落库用例失败 = 代码或被测服务的问题，必须修。"
+            echo "> 公网接口首次失败、重跑通过 = 第三方偶发抖动，仅提示。"
+            echo "> 公网接口重跑仍失败 = 契约变更或第三方持续不可用，需人工判断。"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 上传 Allure 结果
         if: always()

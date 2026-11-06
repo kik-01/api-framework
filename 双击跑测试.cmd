@@ -23,12 +23,14 @@ if not defined PY (
 
 echo ============================================================
 echo  Python : %PY%
-echo  Running: %PY% -m pytest -v
+echo  Running: %PY% -m pytest --alluredir=reports/allure --clean-alluredir
 echo ============================================================
-%PY% -m pytest -v
+rem 跑测试的同时产出 Allure 原始结果，双击看报告.cmd 才有新数据可看
+%PY% -m pytest --alluredir=reports/allure --clean-alluredir
 echo.
 echo ------------------------------------------------------------
 echo  Expected: 28 passed, 3 xfailed
-echo  (3 xfailed = mock service does not persist/validate, by design)
+echo  (3 xfailed = mock service does not validate/persist, by design)
+echo  Allure 原始结果: reports\allure
 echo ------------------------------------------------------------
 pause

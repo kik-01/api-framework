@@ -14,7 +14,9 @@
 - **数据驱动**：测试数据与预期结构放在 YAML，新增用例只加数据行，不改测试逻辑
 - **资源管理**：pytest fixture 负责创建与清理，用例之间互不污染
 - **落库校验**：接口返回与数据库实际值对账，能识别「返回 200 但未写库」的假成功
-- **持续集成**：GitHub Actions 在 push 时自动执行，产物上传为 artifact
+- **重试安全**：只对幂等方法（GET / HEAD / OPTIONS）重试；写操作默认不重试，避免「读超时后重试 = 重复写入」；另设重试总时长上限
+- **可观测**：日志按 2MB 轮转，输出前自动给 token / 密码 / 手机号打码，切真实业务不会把敏感信息写进日志文件
+- **持续集成**：GitHub Actions 在 push 时自动执行；本地落库用例是硬门禁，公网用例首次失败自动重跑失败项一次，仍失败才判红；Allure 原始结果上传为 artifact
 
 ## 技术选型
 
@@ -60,10 +62,13 @@ py check_env.py
 py -m pip install -r requirements.txt
 
 # 2. 跑
-py -m pytest                    # 全部用例
-py -m pytest -m smoke           # 冒烟
-py -m pytest -v                 # 带请求/响应日志
+py -m pytest                    # 全部用例（-v 已写在 pytest.ini 的 addopts 里）
+py -m pytest -m smoke           # 冒烟：5 条核心用例（查询 / 创建 / 落库 / 假成功识别）
+py -m pytest -m "not smoke"     # 反向选择：跑非冒烟用例
 ```
+
+> `pytest.ini` 的 `addopts` 已带 `-v -ra`，所以命令里不用再写 `-v`。
+> 请求 / 响应日志由 `config/test/config.yaml` 的 `verbose` 控制，与 `-v` 无关。
 
 > Windows 建议用 `py`（Python Launcher，会自动选装了依赖的解释器）；若 `py` 不可用，用 `python -m pytest`，但要确认该解释器装过 `requirements.txt`。
 > 遇到问题先跑 `py check_env.py`，它会指出是版本、依赖、配置还是网络的问题。
@@ -106,18 +111,20 @@ testcases/test_posts.py ....................xx..x                [100%]
 | 列表接口读超时 | `GET /posts` 不带参数时用例报 `ReadTimeout`（10s 超时） | 先看日志确认是超时而非 4xx；请求加 `_limit=10` 后立即通过；对比响应体大小，确认是返回 100 条导致 | 接口默认返回全量数据，测试请求未分页；公网延迟叠加 | 请求固定带 `_limit=10`；`config.yaml` 超时放宽至 30s |
 | mock 服务不持久化 | `POST /posts` 返回 201 与 id=101，随后 `GET /posts/101` 返回 404 | 确认 POST 响应正常、换 id 仍 404；查文档确认 jsonplaceholder 不落库 | mock 服务只回显请求，不真正持久化 | 依赖真实写入的 3 条用例标 `xfail` 并注明原因；另起本地 SQLite 服务验证落库链路 |
 | YAML 类型名被解析为字符串 | 结构校验抛 `TypeError: isinstance() arg 2 must be a type` | 打印 schema，发现取到的是字符串 `"int"` 而不是 `int` 类型 | YAML 没有「类型」这种数据类型，`int` 只是普通字符串 | `validators.py` 建立 `TYPE_MAP` 名称到类型的映射；顺带特判 `bool`（它是 `int` 子类） |
-| 重试边界设计 | 初期对所有失败都重试，4xx 也在重试，耗时增加且写操作有重复风险 | 按日志把失败分类，发现 4xx 重试结果完全一致 | 未区分「瞬时故障」与「确定性错误」 | 只重试 `Timeout` / `ConnectionError` / `5xx`；线性退避 1.5s→3s→4.5s；次数在 `config.yaml` 配置 |
+| 重试边界设计 | 初期对所有失败都重试，4xx 也在重试，耗时增加 | 按日志把失败分类，发现 4xx 重试结果完全一致 | 未区分「瞬时故障」与「确定性错误」 | 只重试超时 / 连接错误 / 传输中断 / 5xx；线性退避 1.5s→3s→4.5s；另设 `retry_budget_seconds` 总时长上限 |
+| 写操作被重试导致重复写入 | 落库用例偶发「行数 +2」；读超时后客户端自动重发 POST | 把 `retries=0` 单独试一次，重复写入消失 | `ReadTimeout` 说明请求**可能已被服务端处理**，此时重试写操作等于重复提交 | 重试只作用于幂等方法（GET / HEAD / OPTIONS）；写操作要重试须显式传 `retries`，且上游需有幂等键 |
 
 ## 已知限制
 
-1. **数据隔离不足**：落库校验共用本地 SQLite，并发执行会相互干扰，需要用例级唯一数据或执行后清理
-2. **CI 覆盖不全**：已接入 GitHub Actions，但未接报告发布（Pages）与失败通知
+1. **数据隔离**：落库校验共用本地 SQLite；写入类用例已改为唯一名称计数，但并发执行仍需独立库或独立事务
+2. **CI 覆盖不全**：已接入 GitHub Actions，但未接 Allure HTML 发布（Pages）与失败通知；公网用例仍依赖第三方可用性
 3. **结构校验简单**：手写的 `assert_schema` 不支持嵌套、枚举、正则，复杂场景应改用 jsonschema
 4. **仅支持 SQLite**：真实项目需替换为 pymysql，并处理连接池与主从延迟
+5. **重试策略未单测覆盖**：幂等方法才重试的规则靠代码约束，尚未补单元测试；后续可用 mock session 固化该行为
 
 ## 后续计划
 
-- [ ] 用 `pytest_generate_tests` 实现真正的动态数据驱动
-- [ ] Allure 结果发布到 GitHub Pages
-- [ ] 增加 staging 环境配置，通过 `TEST_ENV` 切换
+- [ ] Allure 结果发布到 GitHub Pages（目前只上传原始结果 artifact）
+- [ ] 增加第二套环境配置（staging），用 `TEST_ENV` 切换验证配置层
 - [ ] 接入 jsonschema 替换手写结构校验
+- [ ] 补重试策略的单元测试：用 mock session 固化「写操作不重试」这条规则

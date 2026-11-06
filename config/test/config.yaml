@@ -11,17 +11,21 @@ base_url: "https://jsonplaceholder.typicode.com"
 timeout: 30
 
 # 失败自动重试次数（0 = 不重试）
-# 公网/第三方依赖建议开启；内网接口可设 0。
-# 仅对超时、连接错误与 5xx 重试；4xx 不重试。
+# 只对幂等方法（GET / HEAD / OPTIONS）生效：POST / PUT / DELETE 默认不重试，
+# 因为读超时说明请求可能已被处理，重试会重复写入。写操作要重试需在用例里显式传 retries。
+# 只重试超时、连接错误、传输中断与 5xx；4xx 与 SSL 证书错误不重试。
 retries: 2
 
-# 是否打印请求/响应日志
+# 单次请求的重试总时长上限（秒）
+# 没有这个上限时，timeout=30 × 3 次 + 退避会把一条用例拖到 100 秒以上。
+retry_budget_seconds: 45
+
+# 是否打印请求/响应日志（日志中的 token、密码、手机号会自动打码）
 verbose: true
 
 # 数据库配置（用于「接口返回成功 → 数据真的落库」一致性校验）
 # 本项目用 SQLite（免安装、免密码，CI 可直接运行）。
-# 换 MySQL 只需改 driver 与连接信息，common/db.py 上层方法不变。
+# 换 MySQL 需要替换 common/db.py 的 connect 部分，上层 query_one / count 方法不变。
 database:
-  enabled: true
-  driver: "sqlite"
+  enabled: true          # 设为 false 时，整组落库校验用例会在 fixture 里 skip
   path: "data/test.db"
