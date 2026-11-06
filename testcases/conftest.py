@@ -32,6 +32,24 @@ def post_data() -> dict:
     return load_yaml("post_data.yaml")
 
 
+def pytest_generate_tests(metafunc):
+    """把 YAML 里的测试数据注入用例参数，新增用例只需加数据行。
+
+    case     -> valid_posts    正常创建场景
+    bad_case -> invalid_posts  异常参数场景
+    post_id  -> valid_ids      查询场景
+    """
+    if "case" in metafunc.fixturenames:
+        cases = load_yaml("post_data.yaml")["valid_posts"]
+        metafunc.parametrize("case", cases, ids=[c["case_id"] for c in cases])
+    if "bad_case" in metafunc.fixturenames:
+        bad_cases = load_yaml("post_data.yaml")["invalid_posts"]
+        metafunc.parametrize("bad_case", bad_cases, ids=[c["case_id"] for c in bad_cases])
+    if "post_id" in metafunc.fixturenames:
+        id_list = load_yaml("post_data.yaml")["valid_ids"]
+        metafunc.parametrize("post_id", id_list, ids=[str(i) for i in id_list])
+
+
 @pytest.fixture
 def created_post(client: ApiClient) -> dict:
     """创建一个资源，用完删掉。

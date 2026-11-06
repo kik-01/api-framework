@@ -119,29 +119,21 @@ class TestPostsWrite:
 class TestPostsParametrized:
     """用 pytest.mark.parametrize 展开数据驱动用例。"""
 
-    @pytest.mark.parametrize(
-        "title,body,user_id",
-        [
-            ("最短标题", "b", 1),
-            ("中文标题测试", "中文正文", 2),
-            ("含符号!@#$%", "含制表符\t", 3),
-            ("emoji测试😀", "emoji正文🚀", 4),
-        ],
-        ids=["short", "chinese", "symbols", "emoji"],
-    )
-    def test_create_with_various_data(
-        self, client: ApiClient, title: str, body: str, user_id: int
-    ):
-        """同一逻辑、不同数据 —— 这就是"数据驱动"的最小形态。"""
+    def test_create_with_various_data(self, client: ApiClient, case: dict):
+        """同一逻辑、不同数据；数据来自 data/post_data.yaml 的 valid_posts。"""
         resp = client.post(
-            "/posts", json_body={"title": title, "body": body, "userId": user_id}
+            "/posts",
+            json_body={
+                "title": case["title"],
+                "body": case["body"],
+                "userId": case["userId"],
+            },
         )
-        assert_status(resp, 201, f"创建文章 title={title!r}")
-        assert_fields(resp, {"title": title}, "标题应原样回显")
+        assert_status(resp, 201, f'创建文章 {case["case_id"]}')
+        assert_fields(resp, {"title": case["title"]}, "标题应原样回显")
 
-    @pytest.mark.parametrize("post_id", [1, 2, 10, 50, 100])
     def test_get_various_ids(self, client: ApiClient, post_id: int):
-        """批量验证不同 id 都能取到。"""
+        """批量验证不同 id 都能取到；id 集合来自 YAML 的 valid_ids。"""
         resp = client.get(f"/posts/{post_id}")
         assert_status(resp, 200, f"获取 id={post_id}")
         assert_fields(resp, {"id": post_id}, "返回的 id 应与请求一致")
@@ -181,26 +173,16 @@ class TestPostsNegative:
         assert resp.status_code != 500, "方法不支持不应导致 500"
 
     @pytest.mark.xfail(
-        reason="jsonplaceholder 是 mock 服务，不校验参数，会返回 201 而非 400。"
-               "指向真实接口时此用例应通过 —— 这正是框架的价值：能发现契约不符。",
+        reason="jsonplaceholder 不校验参数，缺失或类型错误仍返回 201；"
+               "接真实接口后应返回 400/422。",
         strict=False,
     )
-    def test_create_missing_title(self, client: ApiClient):
-        """缺少必填字段：应返回 400/422。"""
-        resp = client.post("/posts", json_body={"body": "没有标题", "userId": 1})
-        assert resp.status_code in (400, 422), (
-            f"缺少必填字段应返回 400/422，实际 {resp.status_code}"
-        )
-
-    @pytest.mark.xfail(
-        reason="同上：mock 服务不做类型校验。",
-        strict=False,
-    )
-    def test_create_wrong_type(self, client: ApiClient):
-        """字段类型错误：应返回 400/422。"""
-        resp = client.post("/posts", json_body={"title": 12345, "body": "x", "userId": 1})
-        assert resp.status_code in (400, 422), (
-            f"类型错误应返回 400/422，实际 {resp.status_code}"
+    def test_create_with_invalid_payload(self, client: ApiClient, bad_case: dict):
+        """异常参数：缺少必填字段或类型错误，应返回 400/422。"""
+        resp = client.post("/posts", json_body=bad_case["payload"])
+        assert resp.status_code in bad_case["expect_status"], (
+            f'{bad_case["case_id"]} 应返回 {bad_case["expect_status"]}，'
+            f"实际 {resp.status_code}"
         )
 
 

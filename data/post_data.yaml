@@ -1,6 +1,5 @@
 # 岗位接口测试数据
-# 设计取舍：数据与代码分离，改测试数据不用动 Python 代码。
-# 真实项目里这份文件通常按业务模块拆分，并且部分数据由 Faker 动态生成。
+# 数据与代码分离：新增用例只加数据行，测试逻辑不用改。
 
 # ---------- 正常场景数据（等价类：有效） ----------
 valid_posts:
@@ -24,15 +23,13 @@ valid_posts:
     title: "测试😀🚀"
     body: "emoji 在 UTF-8 下应正常传输"
     userId: 3
-  - case_id: "POST-005"
-    desc: "超长标题（200 字符，边界上）"
-    title: "长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试长标题测试"
-    body: "边界值：正好 200 字符"
-    userId: 1
+
+# ---------- 查询用 id 集合 ----------
+valid_ids: [1, 2, 10, 50, 100]
 
 # ---------- 异常场景数据（等价类：无效） ----------
-# 注意：jsonplaceholder 是 mock 服务，不校验字段，
-#       这些用例是**演示设计思路**，指向真实接口才会真正生效。
+# jsonplaceholder 不校验参数，这两组在 mock 上会返回 201；
+# 用例以 xfail 标记，接真实接口后应返回 400/422。
 invalid_posts:
   - case_id: "NEG-001"
     desc: "缺少必填字段 title"
@@ -41,18 +38,6 @@ invalid_posts:
   - case_id: "NEG-002"
     desc: "title 类型错误（传数字）"
     payload: {title: 12345, body: "标题是数字", userId: 1}
-    expect_status: [400, 422]
-  - case_id: "NEG-003"
-    desc: "title 为空字符串（边界）"
-    payload: {title: "", body: "空标题", userId: 1}
-    expect_status: [400, 422]
-  - case_id: "NEG-004"
-    desc: "userId 为负数（边界外）"
-    payload: {title: "负用户", body: "userId=-1", userId: -1}
-    expect_status: [400, 422]
-  - case_id: "NEG-005"
-    desc: "请求体为空对象"
-    payload: {}
     expect_status: [400, 422]
 
 # ---------- 响应结构基线 ----------
@@ -65,5 +50,4 @@ post_schema:
 # ---------- 性能基线 ----------
 perf:
   # 响应时间阈值（毫秒）。公共 API 走公网，放宽到 3000ms。
-  # 真实项目内网接口一般定 500ms 或 1000ms。
   max_response_ms: 3000

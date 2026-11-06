@@ -24,11 +24,20 @@ LOG_DIR = ROOT / "logs"
 
 
 def load_config() -> dict:
-    """读取当前环境的配置文件。"""
+    """读取当前环境的配置文件。
+
+    settings 在**导入时**就会执行本函数，所以配置缺失时必须给出能直接照做的报错；
+    否则异常会伪装成 `ImportError while loading conftest`，让人误以为是代码问题。
+    """
     if not CONFIG_FILE.exists():
-        raise FileNotFoundError(
-            f"找不到配置文件: {CONFIG_FILE}\n"
-            f"请确认 config/{ENV}/config.yaml 存在，或用 TEST_ENV 指定环境。"
+        env_root = ROOT / "config"
+        available = sorted(p.parent.name for p in env_root.glob("*/config.yaml"))
+        raise SystemExit(
+            "\n[配置错误] 找不到配置文件：%s\n"
+            "  当前 TEST_ENV=%r\n"
+            "  可用环境：%s\n"
+            "  解决：set TEST_ENV=test（或删除这个环境变量）\n"
+            % (CONFIG_FILE, ENV, "、".join(available) or "（无）")
         )
     with CONFIG_FILE.open(encoding="utf-8") as fh:
         return yaml.safe_load(fh)

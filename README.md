@@ -43,19 +43,30 @@ api-framework/
 │   ├── test_posts.py          # 25 条：查询 / 写入 / 参数化 / 异常 / 性能 / 依赖链
 │   └── test_db_consistency.py # 6 条：接口返回与落库一致性
 ├── .github/workflows/ci.yml   # GitHub Actions
+├── check_env.py               # 环境自检（Python 版本 / 依赖 / 配置 / 网络）
 ├── pytest.ini
 └── requirements.txt
 ```
 
 ## 快速开始
 
-```bash
-pip install -r requirements.txt
+需要 Python 3.10+，网络能访问 jsonplaceholder。
 
-python -m pytest                    # 全部用例
-python -m pytest -m smoke           # 冒烟
-python -m pytest -v                 # 带请求/响应日志
+```bash
+# 0. 先自检：Python 版本 / 依赖 / 配置 / 网络，一次查完
+py check_env.py
+
+# 1. 安装依赖（只需一次）
+py -m pip install -r requirements.txt
+
+# 2. 跑
+py -m pytest                    # 全部用例
+py -m pytest -m smoke           # 冒烟
+py -m pytest -v                 # 带请求/响应日志
 ```
+
+> Windows 建议用 `py`（Python Launcher，会自动选装了依赖的解释器）；若 `py` 不可用，用 `python -m pytest`，但要确认该解释器装过 `requirements.txt`。
+> 遇到问题先跑 `py check_env.py`，它会指出是版本、依赖、配置还是网络的问题。
 
 预期输出：
 
@@ -88,12 +99,14 @@ testcases/test_posts.py ....................xx..x                [100%]
 
 ## 关键问题与处理
 
-| 问题 | 处理 |
-|---|---|
-| 列表接口 `ReadTimeout` | 该接口不带参时一次返回 100 条记录，公网延迟下超出 10s 超时。请求加 `_limit=10`，超时放宽至 30s |
-| mock 服务不持久化 | `POST` 返回的 id 无法查询，链路用例必然失败。标记为 `xfail` 并注明原因，指向真实接口时移除标记 |
-| YAML 类型名被解析为字符串 | `int` 在 YAML 中是字符串 `"int"`，直接传给 `isinstance` 抛 `TypeError`。在 `validators.py` 中建立名称到类型的映射 |
-| 公开 API 响应不稳定 | 同一请求耗时从 300ms 到 30s 不等。在 `api_client.py` 中加自动重试：只重试超时、连接错误与 5xx，采用递增退避，次数可配置 |
+四个坑都按「现象 → 排查 → 根因 → 修复」记录，面试时按这张表讲即可。
+
+| 问题 | 现象 | 排查 | 根因 | 修复 |
+|---|---|---|---|---|
+| 列表接口读超时 | `GET /posts` 不带参数时用例报 `ReadTimeout`（10s 超时） | 先看日志确认是超时而非 4xx；请求加 `_limit=10` 后立即通过；对比响应体大小，确认是返回 100 条导致 | 接口默认返回全量数据，测试请求未分页；公网延迟叠加 | 请求固定带 `_limit=10`；`config.yaml` 超时放宽至 30s |
+| mock 服务不持久化 | `POST /posts` 返回 201 与 id=101，随后 `GET /posts/101` 返回 404 | 确认 POST 响应正常、换 id 仍 404；查文档确认 jsonplaceholder 不落库 | mock 服务只回显请求，不真正持久化 | 依赖真实写入的 3 条用例标 `xfail` 并注明原因；另起本地 SQLite 服务验证落库链路 |
+| YAML 类型名被解析为字符串 | 结构校验抛 `TypeError: isinstance() arg 2 must be a type` | 打印 schema，发现取到的是字符串 `"int"` 而不是 `int` 类型 | YAML 没有「类型」这种数据类型，`int` 只是普通字符串 | `validators.py` 建立 `TYPE_MAP` 名称到类型的映射；顺带特判 `bool`（它是 `int` 子类） |
+| 重试边界设计 | 初期对所有失败都重试，4xx 也在重试，耗时增加且写操作有重复风险 | 按日志把失败分类，发现 4xx 重试结果完全一致 | 未区分「瞬时故障」与「确定性错误」 | 只重试 `Timeout` / `ConnectionError` / `5xx`；线性退避 1.5s→3s→4.5s；次数在 `config.yaml` 配置 |
 
 ## 已知限制
 
