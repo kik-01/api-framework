@@ -40,6 +40,10 @@ api-framework/
 │   ├── db.py                  # 数据库访问，用于落库校验
 │   ├── local_api.py           # 本地被测服务，真实写入 SQLite
 │   └── logger.py              # 日志（控制台 info + 文件 debug）
+├── test-design/               # 功能测试设计（项目二产出，与代码互补）
+│   ├── README.md              # 这层怎么和 testcases/ 配合
+│   ├── 登录模块-测试用例.md      # 56 条用例，七组
+│   └── 缺陷报告-模板与范例.md    # 六要素模板 + 2 份范例
 ├── testcases/
 │   ├── conftest.py            # fixture：client、数据加载、本地服务生命周期
 │   ├── test_posts.py          # 25 条：查询 / 写入 / 参数化 / 异常 / 性能 / 依赖链
