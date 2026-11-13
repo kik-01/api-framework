@@ -123,7 +123,7 @@ def assert_response_time(resp: requests.Response, max_ms: float, msg: str = "") 
     只取最后一次请求的耗时，会把「重试了 3 次」的慢请求算成「一次很快」，
     性能基线会系统性偏乐观。
 
-    注意：这个值在不同网络/机器上波动大，真实项目里要放宽或用百分位统计。
+    该值受网络与设备性能影响波动较大，生产环境应按 P95/P99 统计，而非单次采样。
     """
     total = getattr(resp, "total_elapsed", None)
     if total is None:
