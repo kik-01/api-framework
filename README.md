@@ -43,7 +43,9 @@ api-framework/
 ├── test-design/               # 功能测试设计（项目二产出，与代码互补）
 │   ├── README.md              # 这层怎么和 testcases/ 配合
 │   ├── 登录模块-测试用例.md      # 56 条用例，七组
-│   └── 缺陷记录.md              # 2 条缺陷单：分级标准、复现步骤、修复建议
+│   ├── 缺陷记录.md              # 2 条缺陷：复现步骤、修复与验证
+│   ├── target/                 # 登录测试靶场（单页应用 + 需求规格）
+│   └── execution/              # 执行记录：首轮结果与修复验证
 ├── testcases/
 │   ├── conftest.py            # fixture：client、数据加载、本地服务生命周期
 │   ├── test_posts.py          # 25 条：查询 / 写入 / 参数化 / 异常 / 性能 / 依赖链
