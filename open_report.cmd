@@ -20,7 +20,7 @@ if not defined ALLURE (
 
 rem 2) 没有原始结果就先跑测试
 if not exist "reports\allure" (
-    echo [!] 还没有 Allure 原始结果。先双击「双击跑测试.cmd」再回来。
+    echo [!] 还没有 Allure 原始结果。先运行 run_tests.cmd。
     pause
     exit /b 1
 )

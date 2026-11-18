@@ -25,7 +25,7 @@ echo ============================================================
 echo  Python : %PY%
 echo  Running: %PY% -m pytest --alluredir=reports/allure --clean-alluredir
 echo ============================================================
-rem 跑测试的同时产出 Allure 原始结果，双击看报告.cmd 才有新数据可看
+rem 跑测试的同时产出 Allure 原始结果，open_report.cmd 才有新数据可看
 %PY% -m pytest --alluredir=reports/allure --clean-alluredir
 echo.
 echo ------------------------------------------------------------
